@@ -1,2 +1,5 @@
 # Virtual environments
 .venv/
+
+# Data file
+data/
