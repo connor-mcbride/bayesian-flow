@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from torchvision.utils import save_image
 
+
 def to_4bit(x8):
     """
     Converts images to 4-bit
@@ -12,9 +13,11 @@ def to_4bit(x8):
     """
     return (x8 // 16).long()
 
+
 def normalize_4bit(x4):
     """Normalize 4-bit values ot [0,1]"""
     return x4.float() / 15.0
+
 
 def one_hot_4bit(x4):
     """One-hot encode each pixel/channel"""
@@ -24,7 +27,8 @@ def one_hot_4bit(x4):
         .reshape(x4.shape[0], 3*16, x4.shape[2], x4.shape[3]) \
         .float()
 
-@torch.no_grad
+
+@torch.no_grad()
 def sample(model, device, output="samples.png", B=16):
     model.eval()
 
@@ -51,6 +55,7 @@ def sample(model, device, output="samples.png", B=16):
 
     print(f"Saved samples to {output}")
 
+
 def add_time_channel(x, t):
     """
     x: [B, C, H, W]
@@ -61,16 +66,17 @@ def add_time_channel(x, t):
     t_channel = t.view(B, 1, 1, 1).expand(B, 1, H, W)
     return torch.cat([x, t_channel], dim=1)
 
+
 def alpha(t):
     return t
+
 
 def beta(t):
     return t + 1e-4
 
+
 def make_qt(x4, t, K=16):
-    """
-    Docstring for make_qt
-    
+    """    
     :param x4: [B,3,H,W] integer ground truth
     :param t: [B]
     returns: q_t [B, 48, H, W]
@@ -87,3 +93,65 @@ def make_qt(x4, t, K=16):
     a = alpha(t).view(B, 1, 1, 1)
 
     return (1-a) * uniform + a * x_onehot
+
+
+def categorical_entropy(p, eps=1e-8):
+    """    
+    :param p: [..., K] categorical probabilities
+    :param eps: entropy [...]
+    """
+    return -(p * (p + eps).log()).sum(dim=-1)
+
+
+@torch.no_grad()
+def measure_input_entropy(x4, device, num_t=50):
+    """
+    Docstring for measure_input_entropy
+    
+    :param x4: [B,3,H,W] ground truth
+    returns: times, entropies
+    """
+    B = x4.shape[0]
+    K = 16
+    times = torch.linspace(0, 1, num_t, device=device)
+
+    entropies = []
+
+    for t in times:
+        t_batch = torch.full((B,), t, device=device)
+
+        q_t = make_qt(x4, t_batch, K=K)
+        q_t = q_t.view(B, 3, K, *x4.shape[2:]) \
+                 .permute(0,1,3,4,2)
+        
+        H = categorical_entropy(q_t)
+        entropies.append(H.mean().item())
+
+    return times.cpu(), entropies
+
+
+@torch.no_grad()
+def measure_model_entropy(model, x4, device, num_t=50):
+    model.eval()
+    B = x4.shape[0]
+    K = 16
+    times = torch.linspace(0, 1, num_t, device=device)
+
+    entropies = []
+
+    for t in times:
+        t_batch = torch.full((B,), t, device=device)
+
+        q_t = make_qt(x4, t_batch, K=K)
+        q_t = add_time_channel(q_t, t_batch)
+
+        logits = model(q_t)
+        logits = logits.view(B, 3, K, *x4.shape[2:]) \
+                       .permute(0, 1, 3, 4, 2)
+        
+        probs = torch.softmax(logits, dim=-1)
+
+        H = categorical_entropy(probs)
+        entropies.append(H.mean().item())
+
+    return times.cpu(), entropies

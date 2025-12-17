@@ -1,5 +1,5 @@
 import torch
-from torchvision.utils import save_image
+import matplotlib.pyplot as plt
 from model_stageA import SimpleUNet
 from datasets import get_cifar10_loaders
 from utils import *
@@ -42,7 +42,7 @@ def bfn_categorical_loss(model, x4, device):
     return loss
 
 
-def train(train_loader, test_loader, device, model, opt, num_epochs=50):
+def train(train_loader, test_loader, device, model, opt, num_epochs=50, plot=False):
     for epoch in range(num_epochs):
         for x8, _ in train_loader:
             x8 = x8.to(device)
@@ -61,6 +61,22 @@ def train(train_loader, test_loader, device, model, opt, num_epochs=50):
             loss.backward()
             opt.step()
 
+            # Plot entropy near start, mid training, and the end
+            if plot and epoch in [10, num_epochs // 2, num_epochs - 1]:
+                x8 = next(train_loader)
+                x4 = to_4bit(x8)
+                times, H_in = measure_input_entropy(x4, device)
+                _, H_out = measure_model_entropy(model, x4, device)
+                plt.figure(figsize=(6,4))
+                plt.plot(times, H_in, label="Input Entropy q_t")
+                plt.plot(times, H_out, label="Model Output Entropy")
+                plt.xlabel("Time t")
+                plt.ylabel("Entropy")
+                plt.legend()
+                plt.title(f"Entropy vs Time (BFN) epoch={epoch}")
+
+                plt.savefig(f"plots/model_input_entropy_{epoch}.png")
+
         print(f"epoch {epoch}: train_loss={loss.item():.4f}")
 
 
@@ -72,6 +88,6 @@ if __name__ == "__main__":
     model = SimpleUNet(in_ch=49).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-4)
 
-    train(train_loader, test_loader, device, model, opt, num_epochs=50)
+    train(train_loader, test_loader, device, model, opt, num_epochs=50, plot=True)
 
     sample(model, device, "samples/4_bit_bfn_loss.png")
