@@ -34,8 +34,10 @@ def sample(model, device, output="samples.png", B=16):
     x4_rand = torch.randint(
         0, levels, (B, C, H, W), device=device
     )
-    x_in = normalize_4bit(x4_rand)
-    logits = model(x_in)
+    q = one_hot_4bit(x4_rand)
+    t = torch.ones(B, device=device)
+    q_t = add_time_channel(q, t)
+    logits = model(q_t)
 
     logits = logits.view(B, C, levels, H, W)
     probs = F.softmax(logits, dim=2)
@@ -48,3 +50,13 @@ def sample(model, device, output="samples.png", B=16):
     save_image(x8_hat, output, nrow=int(B**0.5))
 
     print(f"Saved samples to {output}")
+
+def add_time_channel(x, t):
+    """
+    x: [B, C, H, W]
+    t: [B]
+    returns: [B, C+1, H, W]
+    """
+    B, _, H, W = x.shape
+    t_channel = t.view(B, 1, 1, 1).expand(B, 1, H, W)
+    return torch.cat([x, t_channel], dim=1)

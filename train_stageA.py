@@ -26,8 +26,13 @@ def train(train_loader, test_loader, device, model, opt, num_epochs=50):
         for x8, _ in train_loader:
             x8 = x8.to(device)
             x4 = to_4bit(x8)
-            x_in = one_hot_4bit(x4)
-            logits = model(x_in)
+            q = one_hot_4bit(x4)
+
+            B = x4.shape[0]
+            t = torch.rand(B, device=device)
+            q_t = add_time_channel(q, t)
+
+            logits = model(q_t)
 
             loss = discretized_loss(logits, x4)
 
@@ -43,7 +48,7 @@ if __name__ == "__main__":
 
     train_loader, test_loader = get_cifar10_loaders()
 
-    model = SimpleUNet(in_ch=48).to(device)
+    model = SimpleUNet(in_ch=49).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-4)
 
     train(train_loader, test_loader, device, model, opt, num_epochs=50)
