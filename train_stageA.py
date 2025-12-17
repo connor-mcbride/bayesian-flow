@@ -21,6 +21,27 @@ def discretized_loss(logits, target):
     return loss
 
 
+def bfn_categorical_loss(model, x4, device):
+    B = x4.shape[0]
+    t = torch.rand(B, device=device)
+
+    q_t = make_qt(x4, t)
+    q_t = add_time_channel(q_t, t)
+
+    logits = model(q_t)
+    logits = logits.view(B, 3, 16, *x4.shape[2:]).permute(0, 1, 3, 4, 2)
+
+    ce = F.cross_entropy(
+        logits.reshape(-1, 16),
+        x4.reshape(-1),
+        reduction="none"
+    ).view(B, -1).mean(dim=1)
+
+    loss = (ce / beta(t)).mean()
+
+    return loss
+
+
 def train(train_loader, test_loader, device, model, opt, num_epochs=50):
     for epoch in range(num_epochs):
         for x8, _ in train_loader:
@@ -53,4 +74,4 @@ if __name__ == "__main__":
 
     train(train_loader, test_loader, device, model, opt, num_epochs=50)
 
-    sample(model, device, "samples/4_bit_discrete_samples.png")
+    sample(model, device, "samples/4_bit_bfn_loss.png")

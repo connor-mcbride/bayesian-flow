@@ -60,3 +60,30 @@ def add_time_channel(x, t):
     B, _, H, W = x.shape
     t_channel = t.view(B, 1, 1, 1).expand(B, 1, H, W)
     return torch.cat([x, t_channel], dim=1)
+
+def alpha(t):
+    return t
+
+def beta(t):
+    return t + 1e-4
+
+def make_qt(x4, t, K=16):
+    """
+    Docstring for make_qt
+    
+    :param x4: [B,3,H,W] integer ground truth
+    :param t: [B]
+    returns: q_t [B, 48, H, W]
+    """
+    B, C, H, W = x4.shape
+
+    x_onehot = F.one_hot(x4, K) \
+        .permute(0,1,4,2,3) \
+        .reshape(B, C*K, H, W) \
+        .float()
+    
+    uniform = torch.full_like(x_onehot, 1.0 / K)
+
+    a = alpha(t).view(B, 1, 1, 1)
+
+    return (1-a) * uniform + a * x_onehot
