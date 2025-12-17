@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torchvision.utils import save_image
 
 def to_4bit(x8):
     """
@@ -22,3 +23,28 @@ def one_hot_4bit(x4):
         .permute(0,1,4,2,3) \
         .reshape(x4.shape[0], 3*16, x4.shape[2], x4.shape[3]) \
         .float()
+
+@torch.no_grad
+def sample(model, device, output="samples.png", B=16):
+    model.eval()
+
+    C, H, W = 3, 32, 32
+    levels = 16
+
+    x4_rand = torch.randint(
+        0, levels, (B, C, H, W), device=device
+    )
+    x_in = normalize_4bit(x4_rand)
+    logits = model(x_in)
+
+    logits = logits.view(B, C, levels, H, W)
+    probs = F.softmax(logits, dim=2)
+
+    x4_hat = torch.distributions.Categorical(
+        probs.permute(0, 1, 3, 4, 2)
+    ).sample()
+    x8_hat = (x4_hat * 16).clamp(0, 255).float() / 255.0
+
+    save_image(x8_hat, output, nrow=int(B**0.5))
+
+    print(f"Saved samples to {output}")

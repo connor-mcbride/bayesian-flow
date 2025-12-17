@@ -26,7 +26,7 @@ def train(train_loader, test_loader, device, model, opt, num_epochs=50):
         for x8, _ in train_loader:
             x8 = x8.to(device)
             x4 = to_4bit(x8)
-            x_in = normalize_4bit(x4)
+            x_in = one_hot_4bit(x4)
             logits = model(x_in)
 
             loss = discretized_loss(logits, x4)
@@ -36,31 +36,6 @@ def train(train_loader, test_loader, device, model, opt, num_epochs=50):
             opt.step()
 
         print(f"epoch {epoch}: train_loss={loss.item():.4f}")
-    
-
-def sample(model, device, output="samples.png", B=16):
-    model.eval()
-
-    C, H, W = 3, 32, 32
-    levels = 16
-
-    x4_rand = torch.randint(
-        0, levels, (B, C, H, W), device=device
-    )
-    x_in = normalize_4bit(x4_rand)
-    logits = model(x_in)
-
-    logits = logits.view(B, C, levels, H, W)
-    probs = F.softmax(logits, dim=2)
-
-    x4_hat = torch.distributions.Categorical(
-        probs.permute(0, 1, 3, 4, 2)
-    ).sample()
-    x8_hat = (x4_hat * 16).clamp(0, 255).float() / 255.0
-
-    save_image(x8_hat, output, nrow=int(B**0.5))
-
-    print(f"Saved samples to {output}")
 
 
 if __name__ == "__main__":
@@ -68,7 +43,7 @@ if __name__ == "__main__":
 
     train_loader, test_loader = get_cifar10_loaders()
 
-    model = SimpleUNet(in_ch=3).to(device)
+    model = SimpleUNet(in_ch=48).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-4)
 
     train(train_loader, test_loader, device, model, opt, num_epochs=50)
