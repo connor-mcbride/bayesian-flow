@@ -47,15 +47,8 @@ def train(train_loader, test_loader, device, model, opt, num_epochs=50, plot=Fal
         for x8, _ in train_loader:
             x8 = x8.to(device)
             x4 = to_4bit(x8)
-            q = one_hot_4bit(x4)
 
-            B = x4.shape[0]
-            t = torch.rand(B, device=device)
-            q_t = add_time_channel(q, t)
-
-            logits = model(q_t)
-
-            loss = discretized_loss(logits, x4)
+            loss = bfn_categorical_loss(model, x4, device)
 
             opt.zero_grad()
             loss.backward()
