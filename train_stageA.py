@@ -39,6 +39,8 @@ def bfn_categorical_loss(model, x4, device):
 
     loss = (ce / beta(t)).mean()
 
+    print(f"CE={ce.mean():.3f}, loss={loss:.3f}")
+
     return loss
 
 
@@ -56,8 +58,6 @@ def train(train_loader, test_loader, device, model, opt, num_epochs=50, plot=Fal
 
             # Plot entropy near start, mid training, and the end
             if plot and epoch in [10, num_epochs // 2, num_epochs - 1]:
-                x8 = next(train_loader)
-                x4 = to_4bit(x8)
                 times, H_in = measure_input_entropy(x4, device)
                 _, H_out = measure_model_entropy(model, x4, device)
                 plt.figure(figsize=(6,4))
@@ -81,6 +81,6 @@ if __name__ == "__main__":
     model = SimpleUNet(in_ch=49).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-4)
 
-    train(train_loader, test_loader, device, model, opt, num_epochs=50, plot=True)
+    train(train_loader, test_loader, device, model, opt, num_epochs=100, plot=True)
 
-    sample(model, device, "samples/4_bit_bfn_loss.png")
+    sample(model, device, "samples/bfn_loss_A.png")
