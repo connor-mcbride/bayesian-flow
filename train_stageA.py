@@ -5,8 +5,7 @@ from utils import *
 
 
 def discretized_loss(logits, target):
-    """
-    Discretized cross entropy
+    """Discretized cross entropy
     
     logits: [B, 48, H, w]
     target: [B, 3, H, W], integer values 0..15
