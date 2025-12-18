@@ -83,4 +83,5 @@ if __name__ == "__main__":
 
     train(train_loader, test_loader, device, model, opt, num_epochs=100, plot=True)
 
-    sample(model, device, "samples/bfn_loss_A.png")
+    samples = sample_bfn(model, device, B=16, steps=100)
+    save_image(samples, "samples/bfn_unconditional.png", nrow=4)

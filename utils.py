@@ -56,6 +56,40 @@ def sample(model, device, output="samples.png", B=16):
     print(f"Saved samples to {output}")
 
 
+@torch.no_grad()
+def sample_bfn(model, device, B=16, steps=100):
+    model.eval()
+    C, H, W = 3, 32, 32
+    K = 16
+
+    q = torch.full((B, C, K, H, W), 1.0 / K, device=device)
+
+    ts = torch.linspace(0, 1, steps, device=device)
+
+    for i in range(steps - 1):
+        t = ts[i].expand(B)
+
+        q_in = q.permute(0, 1, 3, 4, 2).reshape(B, C*K, H, W)
+        q_in = add_time_channel(q_in, t)
+
+        logits = model(q_in)
+        logits = logits.view(B, C, K, H, W)
+
+        p = torch.softmax(logits, dim=2)
+
+        dt = ts[i+1] - ts[i]
+        q = q + dt * (p-q)
+
+        q = q.clamp(min=1e-6)
+        q = q / q.sum(dim=2, keepdim=True)
+
+    q_final = q.permute(0, 1, 3, 4, 2)
+    x4 = torch.distributions.Categorical(q_final).sample()
+
+    x8 = (x4 * 16).float() / 255.0
+    return x8
+
+
 def add_time_channel(x, t):
     """
     x: [B, C, H, W]
@@ -72,7 +106,7 @@ def alpha(t):
 
 
 def beta(t):
-    return t + 1e-4
+    return 0.1 + 0.9 * t
 
 
 def make_qt(x4, t, K=16):
