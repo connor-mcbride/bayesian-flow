@@ -19,13 +19,27 @@ def normalize_4bit(x4):
     return x4.float() / 15.0
 
 
-def one_hot_4bit(x4):
+def one_hot_4bit(x4, K=16):
     """One-hot encode each pixel/channel"""
     # x4: [B,3,H,W] integer 0..15
-    return F.one_hot(x4, num_classes=16) \
-        .permute(0,1,4,2,3) \
-        .reshape(x4.shape[0], 3*16, x4.shape[2], x4.shape[3]) \
-        .float()
+    B, C, H, W = x4.shape
+    oh = F.one_hot(x4, num_classes=K).permute(0, 1, 4, 2, 3).float()
+    return oh.reshape(B, C*K, H, W)
+
+
+def probs_4bit_from_48(q48, K=16):
+    B, _, H, W = q48.shape
+    return q48.view(B, 3, K, H, W).permute(0, 1, 3, 4, 2)
+
+
+def hi_stats_from_qhi(q_hi_48, K=16):
+    p = probs_4bit_from_48(q_hi_48, K=K)
+    k = torch.arange(K, device=q_hi_48.device).view(1, 1, 1, 1, K)
+    mu = (p * k).sum(dim=-1)
+    ent = categorical_entropy(p)
+    mu = mu / (K - 1)
+
+    return mu, ent
 
 
 @torch.no_grad()
@@ -109,22 +123,15 @@ def beta(t):
     return 0.1 + 0.9 * t
 
 
-def make_qt(x4, t, K=16):
+def make_qt_4bit(x4, t, K=16):
     """    
     :param x4: [B,3,H,W] integer ground truth
     :param t: [B]
     returns: q_t [B, 48, H, W]
     """
-    B, C, H, W = x4.shape
-
-    x_onehot = F.one_hot(x4, K) \
-        .permute(0,1,4,2,3) \
-        .reshape(B, C*K, H, W) \
-        .float()
-    
+    x_onehot = one_hot_4bit(x4, K=K)
     uniform = torch.full_like(x_onehot, 1.0 / K)
-
-    a = alpha(t).view(B, 1, 1, 1)
+    a = alpha(t).view(-1, 1, 1, 1)
 
     return (1-a) * uniform + a * x_onehot
 
@@ -154,7 +161,7 @@ def measure_input_entropy(x4, device, num_t=50):
     for t in times:
         t_batch = torch.full((B,), t, device=device)
 
-        q_t = make_qt(x4, t_batch, K=K)
+        q_t = make_qt_4bit(x4, t_batch, K=K)
         q_t = q_t.view(B, 3, K, *x4.shape[2:]) \
                  .permute(0,1,3,4,2)
         
@@ -176,7 +183,7 @@ def measure_model_entropy(model, x4, device, num_t=50):
     for t in times:
         t_batch = torch.full((B,), t, device=device)
 
-        q_t = make_qt(x4, t_batch, K=K)
+        q_t = make_qt_4bit(x4, t_batch, K=K)
         q_t = add_time_channel(q_t, t_batch)
 
         logits = model(q_t)
