@@ -71,8 +71,9 @@ def sample(model, device, output="samples.png", B=16):
 
 
 @torch.no_grad()
-def sample_bfn(model, device, B=16, steps=100):
+def sample_modelA(model, device, B=16, steps=100):
     model.eval()
+
     C, H, W = 3, 32, 32
     K = 16
 
@@ -86,9 +87,7 @@ def sample_bfn(model, device, B=16, steps=100):
         q_in = q.permute(0, 1, 3, 4, 2).reshape(B, C*K, H, W)
         q_in = add_time_channel(q_in, t)
 
-        logits = model(q_in)
-        logits = logits.view(B, C, K, H, W)
-
+        logits = model(q_in).view(B, C, K, H, W)
         p = torch.softmax(logits, dim=2)
 
         dt = ts[i+1] - ts[i]
@@ -98,10 +97,48 @@ def sample_bfn(model, device, B=16, steps=100):
         q = q / q.sum(dim=2, keepdim=True)
 
     q_final = q.permute(0, 1, 3, 4, 2)
-    x4 = torch.distributions.Categorical(q_final).sample()
 
-    x8 = (x4 * 16).float() / 255.0
-    return x8
+    x_hi = torch.distributions.Categorical(q_final).sample()
+
+    q_hi = q_final.permute(0, 1, 4, 2, 3).reshape(B, C*K, H, W)
+
+    return q_hi, x_hi
+
+
+@torch.no_grad()
+def sample_modelB(model, q_hi, device, B=16, steps=100):
+    model.eval()
+
+    C, H, W = 3, 32, 32
+    K = 16
+
+    q_lo = torch.full((B, C, K, H, W), 1.0 / K, device=device)
+
+    mu_hi, H_hi = hi_stats_from_qhi(q_hi)
+
+    ts = torch.linspace(0, 1, steps, device=device)
+
+    for i in range(steps - 1):
+        t = ts[i].expand(B)
+
+        q_lo_in = q_lo.permute(0, 1, 3, 4, 2).reshape(B, C*K, H, W)
+
+        x_in = torch.cat([q_lo_in, q_hi, mu_hi, H_hi], dim=1)
+        x_in = add_time_channel(x_in, t)
+
+        logits = model(x_in).view(B, C, K, H, W)
+        p = torch.softmax(logits, dim=2)
+
+        dt = ts[i+1] - ts[i]
+        q_lo = q_lo + dt * (p - q_lo)
+
+        q_lo = q_lo.clamp(min=1e-6)
+        q_lo = q_lo / q_lo.sum(dim=2, keepdim=True)
+
+    q_final = q_lo.permute(0, 1, 3, 4, 2)
+    x_lo = torch.distributions.Categorical(q_final).sample()
+
+    return x_lo
 
 
 def add_time_channel(x, t):

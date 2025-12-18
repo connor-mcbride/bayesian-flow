@@ -79,6 +79,7 @@ def bfn_loss_modelB(modelB, x8, device):
 
 
 def train_modelA(train_loader, device, model, opt, num_epochs=50, plot=False):
+    model.train()
     for epoch in range(num_epochs):
         for x8, _ in train_loader:
             x8 = x8.to(device)
@@ -125,15 +126,18 @@ if __name__ == "__main__":
 
     train_loader, _ = get_cifar10_loaders()
 
-    # modelA = SimpleUNet(in_ch=49).to(device)
-    # optA = torch.optim.AdamW(modelA.parameters(), lr=2e-4)
-
-    # train_modelA(train_loader, device, modelA, optA, num_epochs=100, plot=True)
-
-    # samples = sample_bfn(modelA, device, B=16, steps=100)
-    # save_image(samples, "samples/bfn_unconditional.png", nrow=4)
-
+    modelA = SimpleUNet(in_ch=49).to(device)
     modelB = SimpleUNet(in_ch=103).to(device)
+    optA = torch.optim.AdamW(modelA.parameters(), lr=2e-4)
     optB = torch.optim.AdamW(modelB.parameters(), lr=2e-4)
 
+    train_modelA(train_loader, device, modelA, optA, num_epochs=100)
     train_modelB(train_loader, device, modelB, optB, num_epochs=100)
+
+    q_hi, x_hi = sample_modelA(modelA, device, B=16, steps=100)
+
+    x_lo = sample_modelB(modelB, q_hi, device, B=16, steps=100)
+
+    # Combine bits
+    x8 = (16 * x_hi + x_lo).float() / 255.0
+    save_image(x8, "samples/hierarchical_bfn.png", nrow=4)
